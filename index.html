@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>航行警告・航行通告 — 中国海事局（可视化）</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Microsoft YaHei','Hiragino Sans','Noto Sans SC',sans-serif;background:#f4f4f4;color:#222;font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+#site-header{background:#003087;color:#fff;flex-shrink:0}
+#header-top{display:flex;align-items:center;gap:16px;padding:10px 24px;border-bottom:1px solid #00236a}
+#header-emblem{width:44px;height:44px;background:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+#header-titles{flex:1}
+#header-title-cn{font-size:18px;font-weight:700;letter-spacing:.05em}
+#header-title-en{font-size:10px;opacity:.75;letter-spacing:.08em;margin-top:2px}
+#header-meta{font-size:11px;opacity:.7;text-align:right;line-height:1.9}
+#nav-bar{background:#00236a;display:flex;align-items:center;padding:0 24px}
+.nav-item{color:#ccdff5;font-size:13px;padding:8px 16px;cursor:pointer;border-right:1px solid #003087}
+.nav-item.active,.nav-item:hover{background:#003087;color:#fff}
+#nav-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+#status-badge{display:flex;align-items:center;gap:5px;font-size:12px;color:#ccdff5}
+#status-dot{width:7px;height:7px;border-radius:50%;animation:blink 2s ease-in-out infinite}
+#btn-refresh{background:#e63312;color:#fff;border:none;padding:5px 14px;border-radius:3px;cursor:pointer;font-size:12px;font-family:inherit}
+#btn-refresh:hover{background:#c02a0f}
+#btn-refresh:disabled{background:#666;cursor:not-allowed}
+#main-wrap{display:flex;flex:1;overflow:hidden}
+#left-panel{width:480px;flex-shrink:0;background:#fff;border-right:2px solid #003087;display:flex;flex-direction:column;overflow:hidden}
+#bureau-tabs{display:flex;flex-wrap:wrap;background:#e8eef8;border-bottom:2px solid #003087;padding:6px 8px 0;gap:4px}
+.bureau-tab{padding:5px 10px;font-size:12px;border-radius:4px 4px 0 0;cursor:pointer;border:1px solid #c0c8d8;background:#f0f4fb;color:#444;white-space:nowrap;transition:all .15s}
+.bureau-tab.active{background:#003087;color:#fff;border-color:#003087}
+#filter-bar{padding:8px 12px;background:#f9f9f9;border-bottom:1px solid #e0e0e0;display:flex;gap:8px;align-items:center}
+#search-input{flex:1;border:1px solid #c0c8d8;border-radius:3px;padding:5px 8px;font-size:13px;font-family:inherit}
+#type-filter{border:1px solid #c0c8d8;border-radius:3px;padding:5px 6px;font-size:12px;font-family:inherit;background:#fff}
+#count-bar{padding:5px 12px;background:#eef2f8;border-bottom:1px solid #d8e0ec;font-size:12px;color:#555;display:flex;justify-content:space-between;align-items:center}
+.live-badge{font-size:11px;padding:1px 7px;border-radius:2px;font-weight:600}
+.live-badge.live{background:#d4edda;color:#155724}
+.live-badge.fallback{background:#f8d7da;color:#721c24}
+.live-badge.fetching{background:#fff3cd;color:#856404}
+#warning-table-wrap{flex:1;overflow-y:auto}
+table#warning-table{width:100%;border-collapse:collapse}
+#warning-table thead{position:sticky;top:0;z-index:2}
+#warning-table th{background:#003087;color:#fff;padding:7px 10px;font-size:12px;font-weight:600;text-align:left;white-space:nowrap}
+#warning-table tbody tr{border-bottom:1px solid #e8e8e8;cursor:pointer;transition:background .1s}
+#warning-table tbody tr:hover{background:#eef4ff}
+#warning-table tbody tr.selected{background:#dce8ff}
+#warning-table td{padding:7px 10px;font-size:13px;vertical-align:middle}
+#warning-table td.num{color:#888;font-size:11px;text-align:center;width:28px}
+#warning-table td.title-col a{color:#003087;text-decoration:none;font-weight:500;line-height:1.4;display:block}
+#warning-table td.title-col a:hover{text-decoration:underline;color:#e63312}
+#warning-table td.title-col .sub{font-size:11px;color:#888;margin-top:1px}
+#warning-table td.type-col span{font-size:11px;padding:2px 6px;border-radius:2px;white-space:nowrap;display:inline-block}
+#warning-table td.date-col{font-size:12px;color:#666;white-space:nowrap;width:80px}
+#pagination{padding:8px 12px;border-top:1px solid #e0e0e0;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#666;background:#f9f9f9}
+.page-btns{display:flex;gap:4px}
+.page-btn{padding:3px 9px;border:1px solid #c0c8d8;border-radius:3px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit}
+.page-btn:disabled{opacity:.4;cursor:not-allowed}
+#right-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#f4f4f4}
+#placeholder{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#aaa;gap:12px}
+#placeholder p{font-size:14px}
+#placeholder p.sub{font-size:12px;color:#ccc}
+#detail-area{flex:1;display:none;flex-direction:column;overflow:hidden}
+#detail-area.visible{display:flex}
+#detail-header{background:#003087;color:#fff;padding:10px 16px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-shrink:0}
+#detail-header-left{flex:1}
+#detail-type-badge{display:inline-block;font-size:11px;padding:2px 7px;border-radius:2px;margin-bottom:5px;font-weight:600}
+#detail-title{font-size:15px;font-weight:700;line-height:1.4}
+#detail-number{font-size:12px;opacity:.8;margin-top:3px}
+#btn-close{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;width:26px;height:26px;border-radius:3px;cursor:pointer;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+#btn-close:hover{background:rgba(255,255,255,.3)}
+#detail-body{flex:1;display:flex;overflow:hidden}
+#detail-info{width:290px;flex-shrink:0;overflow-y:auto;padding:14px;border-right:1px solid #ddd;background:#fff;font-size:13px}
+.info-sec-title{font-size:11px;font-weight:700;color:#003087;letter-spacing:.08em;border-bottom:2px solid #003087;padding-bottom:3px;margin:0 0 8px}
+.info-row{display:flex;gap:8px;margin-bottom:6px}
+.info-label{font-size:11px;color:#888;width:60px;flex-shrink:0;padding-top:1px}
+.info-value{font-size:12px;color:#222;flex:1;line-height:1.6}
+#detail-desc{font-size:12px;line-height:1.8;color:#333;background:#f9f9f9;border:1px solid #e0e0e0;border-radius:3px;padding:10px;margin-top:4px}
+#dp-coords{font-size:11px;color:#555;line-height:2;font-family:monospace;background:#f5f5f5;border-radius:3px;padding:8px;margin-top:4px}
+#detail-source-link{display:inline-flex;align-items:center;gap:4px;color:#003087;font-size:12px;text-decoration:none;border:1px solid #003087;padding:4px 12px;border-radius:3px;margin-top:10px}
+#detail-source-link:hover{background:#003087;color:#fff}
+#map-wrap{flex:1;position:relative;background:#c8dff0;overflow:hidden;min-width:200px}
+#map-svg{display:block;cursor:grab}
+#map-svg:active{cursor:grabbing}
+#map-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;background:rgba(200,223,240,.9);z-index:10}
+.spinner{width:36px;height:36px;border:3px solid #ccc;border-top:3px solid #003087;border-radius:50%;animation:spin 1s linear infinite}
+#map-loading span{font-size:13px;color:#555}
+#map-resolution{position:absolute;bottom:6px;left:8px;font-size:10px;color:#555;background:rgba(255,255,255,.8);padding:2px 6px;border-radius:3px;display:none}
+#map-zoom-btns{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:6px;z-index:5}
+.map-zoom-btn{width:30px;height:30px;border:1px solid #bbb;background:rgba(255,255,255,.92);border-radius:4px;cursor:pointer;font-size:17px;display:flex;align-items:center;justify-content:center;font-family:inherit;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+#map-legend{position:absolute;bottom:8px;right:8px;background:rgba(255,255,255,.92);border:1px solid #ddd;border-radius:4px;padding:7px 10px;font-size:11px}
+.legend-row{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.legend-box{width:12px;height:10px;border-radius:2px;flex-shrink:0;border-width:1.5px;border-style:solid}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:#f0f0f0}
+::-webkit-scrollbar-thumb{background:#bbb;border-radius:3px}
+</style>
+</head>
+<body>
+<header id="site-header">
+  <div id="header-top">
+    <div id="header-emblem">
+      <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+        <circle cx="16" cy="8" r="3.5" stroke="#003087" stroke-width="2"/>
+        <line x1="16" y1="11.5" x2="16" y2="28" stroke="#003087" stroke-width="2"/>
+        <path d="M8 16 Q16 14 24 16" stroke="#003087" stroke-width="2" fill="none"/>
+        <path d="M8 28 Q10 24 16 26 Q22 24 24 28" stroke="#003087" stroke-width="2" fill="none"/>
+      </svg>
+    </div>
+    <div id="header-titles">
+      <div id="header-title-cn">中华人民共和国海事局　航行警告・航行通告　可视化系统</div>
+      <div id="header-title-en">MARITIME SAFETY ADMINISTRATION OF P.R.C — NAVIGATIONAL WARNING VISUALIZATION</div>
+    </div>
+    <div id="header-meta">
+      <div id="hm-time"></div>
+      <div id="hm-updated">データ取得中…</div>
+    </div>
+  </div>
+  <nav id="nav-bar">
+    <div class="nav-item active">航行警告・通告</div>
+    <div class="nav-item">航标动态</div>
+    <div class="nav-item">气象预警</div>
+    <div id="nav-right">
+      <div id="status-badge">
+        <div id="status-dot" style="background:#888"></div>
+        <span id="status-label" style="color:#ccdff5">読込中</span>
+      </div>
+      <button id="btn-refresh">⟳ 刷新</button>
+    </div>
+  </nav>
+</header>
+
+<div id="main-wrap">
+  <div id="left-panel">
+    <div id="bureau-tabs"></div>
+    <div id="filter-bar">
+      <input id="search-input" type="text" placeholder="搜索通告名称…">
+      <select id="type-filter">
+        <option value="all">全部类型</option>
+        <option value="military">演习区域</option>
+        <option value="dredging">疏浚作业</option>
+        <option value="cable">海底电缆</option>
+        <option value="platform">设施建设</option>
+        <option value="obstacle">障碍物</option>
+        <option value="hazard">航行危险</option>
+      </select>
+    </div>
+    <div id="count-bar">
+      <span id="count-text">共 0 条</span>
+      <span id="live-badge" class="live-badge fallback">读取中</span>
+    </div>
+    <div id="warning-table-wrap">
+      <table id="warning-table">
+        <thead>
+          <tr>
+            <th style="width:28px;text-align:center">序</th>
+            <th>通告名称</th>
+            <th style="width:80px;text-align:center">类型</th>
+            <th style="width:80px">发布日期</th>
+          </tr>
+        </thead>
+        <tbody id="warning-tbody"></tbody>
+      </table>
+    </div>
+    <div id="pagination">
+      <span id="page-info"></span>
+      <div class="page-btns">
+        <button class="page-btn" id="btn-prev">＜ 上页</button>
+        <button class="page-btn" id="btn-next">下页 ＞</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="right-panel">
+    <div id="placeholder">
+      <svg width="72" height="72" viewBox="0 0 72 72" fill="none">
+        <circle cx="36" cy="36" r="32" stroke="#ccc" stroke-width="2.5"/>
+        <line x1="36" y1="12" x2="36" y2="60" stroke="#ccc" stroke-width="2"/>
+        <line x1="12" y1="36" x2="60" y2="36" stroke="#ccc" stroke-width="2"/>
+        <circle cx="36" cy="18" r="3.5" fill="#ccc"/>
+        <path d="M22 56 Q36 50 50 56" stroke="#ccc" stroke-width="2" fill="none"/>
+      </svg>
+      <p>点击左侧通告名称查看详情及海区地图</p>
+      <p class="sub">Click a warning title to view details and nautical chart</p>
+    </div>
+    <div id="detail-area">
+      <div id="detail-header">
+        <div id="detail-header-left">
+          <div id="detail-type-badge"></div>
+          <div id="detail-title"></div>
+          <div id="detail-number"></div>
+        </div>
+        <button id="btn-close">×</button>
+      </div>
+      <div id="detail-body">
+        <div id="detail-info">
+          <div class="info-sec-title">基本信息</div>
+          <div class="info-row"><span class="info-label">发令机关</span><span class="info-value" id="dp-source"></span></div>
+          <div class="info-row"><span class="info-label">发布日期</span><span class="info-value" id="dp-date"></span></div>
+          <div class="info-row"><span class="info-label">生效日期</span><span class="info-value" id="dp-start"></span></div>
+          <div class="info-row"><span class="info-label">截止日期</span><span class="info-value" id="dp-end"></span></div>
+          <div class="info-row"><span class="info-label">VHF频道</span><span class="info-value" id="dp-vhf"></span></div>
+          <div class="info-row"><span class="info-label">施工船舶</span><span class="info-value" id="dp-vessels"></span></div>
+          <div class="info-sec-title" style="margin-top:12px">通告内容</div>
+          <div id="detail-desc"></div>
+          <div class="info-sec-title" style="margin-top:12px">海区坐标</div>
+          <div id="dp-coords"></div>
+          <a id="detail-source-link" href="#" target="_blank" rel="noopener noreferrer">
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1 10L10 1M10 1H5M10 1V6" stroke="currentColor" stroke-width="1.5"/></svg>
+            查看原文 (msa.gov.cn)
+          </a>
+        </div>
+        <div id="map-wrap">
+          <svg id="map-svg"></svg>
+          <div id="map-loading"><div class="spinner"></div><span>正在加载海图…</span></div>
+          <div id="map-resolution"></div>
+          <div id="map-zoom-btns">
+            <button class="map-zoom-btn" id="zoom-in">＋</button>
+            <button class="map-zoom-btn" id="zoom-out">－</button>
+          </div>
+          <div id="map-legend"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── 設定 ──────────────────────────────────────────────────────
+// GitHub Pages では同じリポジトリの data/warnings.json を読む
+const DATA_URL  = './data/warnings.json';
+const PAGE_SIZE = 20;
+
+const TYPE_CONFIG = {
+  military: {color:'#E84B3C',bg:'#fde8e8',label:'演习区域'},
+  dredging: {color:'#d07700',bg:'#fff3d0',label:'疏浚作业'},
+  cable:    {color:'#5b4fcf',bg:'#eeeaff',label:'海底电缆'},
+  platform: {color:'#b05000',bg:'#fde8d0',label:'设施建设'},
+  obstacle: {color:'#1a7a5e',bg:'#d4f5ec',label:'障碍物'},
+  hazard:   {color:'#b0006a',bg:'#ffe0f0',label:'航行危险'},
+};
+
+const BUREAUS = [
+  {id:'all',name:'全部'},
+  {id:'上海海事局',name:'上海'},{id:'浙江海事局',name:'浙江'},
+  {id:'福建海事局',name:'福建'},{id:'広東海事局',name:'广东'},
+  {id:'海南海事局',name:'海南'},{id:'遼寧海事局',name:'辽宁'},
+  {id:'天津海事局',name:'天津'},{id:'山東海事局',name:'山东'},
+  {id:'江蘇海事局',name:'江苏'},
+];
+
+// ── 状態 ──────────────────────────────────────────────────────
+let S = {
+  all:[], filtered:[], selected:null,
+  bureau:'all', type:'all', query:'', page:1,
+  status:'loading',
+};
+
+// ── 地図 ──────────────────────────────────────────────────────
+let mapReady=false, geoLand=null, geoBorders=null, gRes='—';
+let zoomB, gLand, gBorders, gPoly;
+let curT=d3.zoomIdentity;
+
+function initMap(){
+  if(mapReady) return;
+  mapReady=true;
+  const wrap=document.getElementById('map-wrap');
+  const w=Math.max(wrap.offsetWidth,200), h=Math.max(wrap.offsetHeight,200);
+  const svg=d3.select('#map-svg').attr('width',w).attr('height',h);
+  svg.append('defs').append('clipPath').attr('id','mclip')
+    .append('rect').attr('width',w).attr('height',h);
+  const g=svg.append('g').attr('clip-path','url(#mclip)');
+  g.append('rect').attr('width',w).attr('height',h).attr('fill','#c8dff0');
+  g.append('path').attr('id','gg').attr('fill','none').attr('stroke','#9bbdd4').attr('stroke-width',.3).attr('opacity',.7);
+  gLand=g.append('g'); gBorders=g.append('g'); gPoly=g.append('g');
+  zoomB=d3.zoom().scaleExtent([.3,300]).on('zoom',e=>{curT=e.transform;redraw();drawPoly();});
+  svg.call(zoomB);
+  document.getElementById('zoom-in').onclick =()=>d3.select('#map-svg').transition().duration(250).call(zoomB.scaleBy,1.6);
+  document.getElementById('zoom-out').onclick=()=>d3.select('#map-svg').transition().duration(250).call(zoomB.scaleBy,.625);
+  new ResizeObserver(()=>resizeMap()).observe(wrap);
+  renderLegend();
+  loadGeo();
+}
+
+function getProj(){
+  const wrap=document.getElementById('map-wrap');
+  const w=Math.max(wrap.offsetWidth,200), h=Math.max(wrap.offsetHeight,200);
+  return d3.geoMercator().center([120,28]).scale(1800).translate([w/2,h/2]);
+}
+function makeTP(proj){
+  const t=curT;
+  return {stream:s=>proj.stream({
+    point(x,y){s.point(t.x+t.k*x,t.y+t.k*y)},
+    lineStart(){s.lineStart()},lineEnd(){s.lineEnd()},
+    polygonStart(){s.polygonStart()},polygonEnd(){s.polygonEnd()},
+    sphere(){s.sphere()}
+  })};
+}
+function redraw(){
+  const proj=getProj(), pg=d3.geoPath().projection(makeTP(proj));
+  d3.select('#gg').attr('d',pg(d3.geoGraticule().step([5,5])()));
+  if(geoLand){
+    const p=gLand.selectAll('path').data(geoLand);
+    p.enter().append('path').merge(p).attr('fill','#eae6dc').attr('d',pg);
+    p.exit().remove();
+  }
+  if(geoBorders){
+    gBorders.selectAll('path').remove();
+    if(geoBorders.type==='FeatureCollection'){
+      gBorders.selectAll('path').data(geoBorders.features).enter()
+        .append('path').attr('fill','none').attr('stroke','#9aaa96').attr('stroke-width',.5).attr('d',pg);
+    } else {
+      gBorders.append('path').attr('fill','none').attr('stroke','#9aaa96').attr('stroke-width',.5).attr('d',pg(geoBorders));
+    }
+  }
+}
+function drawPoly(){
+  gPoly.selectAll('*').remove();
+  const w=S.selected; if(!w) return;
+  const proj=getProj(), t=curT, cfg=TYPE_CONFIG[w.type]||TYPE_CONFIG.hazard;
+  const pts=w.coords.map(([lat,lng])=>{const[x,y]=proj([lng,lat]);return[t.x+t.k*x,t.y+t.k*y];});
+  const d=pts.map((p,i)=>(i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')+'Z';
+  gPoly.append('path').attr('d',d).attr('fill',cfg.color).attr('fill-opacity',.28)
+    .attr('stroke',cfg.color).attr('stroke-width',2.5)
+    .attr('stroke-dasharray',w.type==='military'?'9,5':null);
+}
+function resizeMap(){
+  const wrap=document.getElementById('map-wrap');
+  const w=Math.max(wrap.offsetWidth,200),h=Math.max(wrap.offsetHeight,200);
+  const svg=d3.select('#map-svg').attr('width',w).attr('height',h);
+  svg.select('defs clipPath rect').attr('width',w).attr('height',h);
+  svg.select('g rect').attr('width',w).attr('height',h);
+  redraw(); drawPoly();
+}
+function panTo(w){
+  if(!w||!zoomB) return;
+  const wrap=document.getElementById('map-wrap');
+  const pw=Math.max(wrap.offsetWidth,200),ph=Math.max(wrap.offsetHeight,200);
+  const proj=getProj();
+  const lats=w.coords.map(c=>c[0]),lngs=w.coords.map(c=>c[1]);
+  const cLng=(Math.min(...lngs)+Math.max(...lngs))/2;
+  const cLat=(Math.min(...lats)+Math.max(...lats))/2;
+  const[px,py]=proj([cLng,cLat]);
+  const span=Math.max(Math.max(...lats)-Math.min(...lats),Math.max(...lngs)-Math.min(...lngs),.05);
+  const k=Math.min(Math.max(4/span*2,4),30);
+  d3.select('#map-svg').transition().duration(700)
+    .call(zoomB.transform,d3.zoomIdentity.translate(pw/2-k*px,ph/2-k*py).scale(k));
+}
+function loadGeo(){
+  fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json')
+    .then(r=>r.json()).then(t=>{
+      geoLand=topojson.feature(t,t.objects.countries).features;
+      geoBorders=topojson.mesh(t,t.objects.countries,(a,b)=>a!==b);
+      gRes='50m';
+      document.getElementById('map-loading').style.display='none';
+      const el=document.getElementById('map-resolution');
+      el.style.display='block'; el.textContent='精度:'+gRes+' | © Natural Earth';
+      redraw(); drawPoly();
+      return fetch('https://cdn.jsdelivr.net/npm/natural-earth-topojson@3.0.0/data/ne_10m_land.json');
+    }).then(r=>r.json()).then(t=>{
+      geoLand=topojson.feature(t,t.objects.ne_10m_land).features;
+      gRes='10m';
+      document.getElementById('map-resolution').textContent='精度:'+gRes+' | © Natural Earth';
+      redraw();
+      return fetch('https://cdn.jsdelivr.net/npm/natural-earth-topojson@3.0.0/data/ne_10m_admin_0_boundary_lines_land.json');
+    }).then(r=>r.json()).then(t=>{
+      geoBorders=topojson.feature(t,t.objects.ne_10m_admin_0_boundary_lines_land);
+      redraw();
+    }).catch(()=>{});
+}
+function renderLegend(){
+  const el=document.getElementById('map-legend');
+  el.innerHTML='';
+  Object.entries(TYPE_CONFIG).forEach(([,v])=>{
+    const row=document.createElement('div');
+    row.className='legend-row';
+    row.innerHTML=`<div class="legend-box" style="border-color:${v.color};background:${v.color}40"></div><span>${v.label}</span>`;
+    el.appendChild(row);
+  });
+}
+
+// ── データ取得 ────────────────────────────────────────────────
+function setStatus(s,updated){
+  S.status=s;
+  const cfg={
+    live:    {color:'#1a7a4a',label:'实时数据',cls:'live'},
+    fallback:{color:'#c0392b',label:'离线/サンプル',cls:'fallback'},
+    fetching:{color:'#b07800',label:'获取中',cls:'fetching'},
+  }[s]||{color:'#888',label:'--',cls:'fallback'};
+  const dot=document.getElementById('status-dot');
+  dot.style.background=cfg.color; dot.style.boxShadow='0 0 6px '+cfg.color;
+  document.getElementById('status-label').textContent=cfg.label;
+  document.getElementById('status-label').style.color=cfg.color;
+  const badge=document.getElementById('live-badge');
+  badge.textContent=cfg.label; badge.className='live-badge '+cfg.cls;
+  if(updated) document.getElementById('hm-updated').textContent='最終取得: '+updated;
+}
+
+function loadData(){
+  document.getElementById('btn-refresh').disabled=true;
+  document.getElementById('btn-refresh').textContent='⟳ 読込中…';
+  setStatus('fetching');
+  // キャッシュを避けるためタイムスタンプを付与
+  fetch(DATA_URL+'?t='+Date.now())
+    .then(r=>{if(!r.ok)throw new Error(r.status);return r.json();})
+    .then(data=>{
+      S.all = data.warnings||[];
+      const upd = data.updatedAt ? new Date(data.updatedAt).toLocaleString('ja-JP') : '—';
+      if(S.all.length>0 && data.source==='scraper'){
+        setStatus('live', upd);
+      } else {
+        setStatus('fallback', upd);
+      }
+      applyFilter();
+    })
+    .catch(()=>{
+      // data/warnings.json が空・未生成の場合はサンプルを使用
+      S.all = FALLBACK_SAMPLE;
+      setStatus('fallback','—（サンプルデータ）');
+      applyFilter();
+    })
+    .finally(()=>{
+      document.getElementById('btn-refresh').disabled=false;
+      document.getElementById('btn-refresh').textContent='⟳ 刷新';
+    });
+}
+
+// ── フィルター ────────────────────────────────────────────────
+function applyFilter(){
+  const q=S.query.toLowerCase();
+  S.filtered=S.all.filter(w=>{
+    if(S.bureau!=='all'&&w.source!==S.bureau) return false;
+    if(S.type!=='all'&&w.type!==S.type)       return false;
+    if(q&&!w.title.toLowerCase().includes(q)&&!(w.number||'').toLowerCase().includes(q)) return false;
+    return true;
+  });
+  S.page=1;
+  renderBureauTabs();
+  renderTable();
+}
+
+// ── レンダリング ──────────────────────────────────────────────
+function renderBureauTabs(){
+  const wrap=document.getElementById('bureau-tabs');
+  wrap.innerHTML='';
+  BUREAUS.forEach(b=>{
+    const cnt=b.id==='all'?S.all.length:S.all.filter(w=>w.source===b.id).length;
+    if(b.id!=='all'&&cnt===0) return;
+    const tab=document.createElement('div');
+    tab.className='bureau-tab'+(S.bureau===b.id?' active':'');
+    tab.textContent=b.name+'（'+cnt+'）';
+    tab.onclick=()=>{S.bureau=b.id;applyFilter();};
+    wrap.appendChild(tab);
+  });
+}
+function renderTable(){
+  const total=S.filtered.length;
+  const pages=Math.max(1,Math.ceil(total/PAGE_SIZE));
+  S.page=Math.min(S.page,pages);
+  const start=(S.page-1)*PAGE_SIZE;
+  const slice=S.filtered.slice(start,start+PAGE_SIZE);
+  document.getElementById('count-text').textContent='共 '+total+' 条';
+  const tbody=document.getElementById('warning-tbody');
+  tbody.innerHTML='';
+  slice.forEach((w,i)=>{
+    const cfg=TYPE_CONFIG[w.type]||TYPE_CONFIG.hazard;
+    const isSel=S.selected&&S.selected.id===w.id;
+    const tr=document.createElement('tr');
+    if(isSel) tr.className='selected';
+    tr.innerHTML=`
+      <td class="num">${start+i+1}</td>
+      <td class="title-col">
+        <a href="#" data-id="${w.id}">${w.title}</a>
+        <div class="sub">${w.number||''}</div>
+      </td>
+      <td class="type-col"><span style="background:${cfg.bg};color:${cfg.color};border:1px solid ${cfg.color}55">${cfg.label}</span></td>
+      <td class="date-col">${w.date||''}</td>`;
+    tr.querySelector('a').addEventListener('click',e=>{e.preventDefault();selectWarning(w);});
+    tbody.appendChild(tr);
+  });
+  document.getElementById('page-info').textContent='第 '+S.page+' 页 / 共 '+pages+' 页';
+  document.getElementById('btn-prev').disabled=S.page<=1;
+  document.getElementById('btn-next').disabled=S.page>=pages;
+}
+function selectWarning(w){
+  S.selected=w;
+  renderTable();
+  // 詳細パネル表示
+  document.getElementById('placeholder').style.display='none';
+  document.getElementById('detail-area').classList.add('visible');
+  // 詳細内容
+  const cfg=TYPE_CONFIG[w.type]||TYPE_CONFIG.hazard;
+  const badge=document.getElementById('detail-type-badge');
+  badge.textContent=cfg.label; badge.style.background=cfg.bg; badge.style.color=cfg.color;
+  document.getElementById('detail-title').textContent=w.title;
+  document.getElementById('detail-number').textContent=w.number||'';
+  document.getElementById('dp-source').textContent=w.source||'—';
+  document.getElementById('dp-date').textContent=w.date||'—';
+  document.getElementById('dp-start').textContent=w.startDate||'—';
+  document.getElementById('dp-end').textContent=w.endDate||'—';
+  document.getElementById('dp-vhf').textContent=w.vhf||'—';
+  document.getElementById('dp-vessels').textContent=w.vessels||'—';
+  document.getElementById('detail-desc').textContent=w.description||'';
+  document.getElementById('dp-coords').innerHTML=(w.coords||[])
+    .map((c,i)=>`P${i+1}：${c[0].toFixed(4)}°N, ${c[1].toFixed(4)}°E`).join('<br>');
+  const link=document.getElementById('detail-source-link');
+  link.href=w.sourceUrl||'#'; link.style.display=w.sourceUrl?'inline-flex':'none';
+  // 地図
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    initMap(); resizeMap(); redraw(); drawPoly(); panTo(w);
+  }));
+}
+
+// ── イベント ──────────────────────────────────────────────────
+document.getElementById('btn-refresh').addEventListener('click',loadData);
+document.getElementById('btn-close').addEventListener('click',()=>{
+  S.selected=null;
+  document.getElementById('detail-area').classList.remove('visible');
+  document.getElementById('placeholder').style.display='';
+  renderTable();
+});
+document.getElementById('btn-prev').addEventListener('click',()=>{S.page--;renderTable();});
+document.getElementById('btn-next').addEventListener('click',()=>{S.page++;renderTable();});
+document.getElementById('search-input').addEventListener('input',e=>{S.query=e.target.value;applyFilter();});
+document.getElementById('type-filter').addEventListener('change',e=>{S.type=e.target.value;applyFilter();});
+
+// 時計
+function updateClock(){
+  document.getElementById('hm-time').textContent=new Date().toLocaleString('zh-CN');
+}
+
+// ── フォールバックデータ（warnings.json 未生成時） ───────────
+const FALLBACK_SAMPLE=[
+  {id:'W001',title:'朱家尖海洋维权基地码头疏浚工程',number:'浙航通〔2026〕0679号',source:'浙江海事局',date:'2026-06-14',startDate:'2026-06-17',endDate:'2026-06-30',type:'dredging',coords:[[29.9243,122.3262],[29.9244,122.3240],[29.9218,122.3264],[29.9226,122.3275]],description:'舟山海区朱家尖岛西南侧附近海域实施疏浚作业，无关船舶禁止进入施工安全区。',vessels:'洪泰323、海鹏26',vhf:'CH16',sourceUrl:'https://www.msa.gov.cn/dc8d821b39fb46908fd50924c86a7ac7/index.jhtml'},
+  {id:'W002',title:'温州洞头110kV海底电缆敷设工程',number:'浙航通〔2026〕0678号',source:'浙江海事局',date:'2026-06-12',startDate:'2026-06-15',endDate:'2026-08-30',type:'cable',coords:[[27.882,121.156],[27.895,121.178],[27.910,121.162],[27.898,121.140]],description:'温州洞头海域进行110kV海底电缆敷设施工，禁止在路由区内抛锚。',vessels:'工程船队',vhf:'CH16',sourceUrl:'https://www.msa.gov.cn/dc8d821b39fb46908fd50924c86a7ac7/index.jhtml'},
+  {id:'W003',title:'厦门港主航道整治疏浚工程',number:'闽航通〔2026〕0412号',source:'福建海事局',date:'2026-06-10',startDate:'2026-06-12',endDate:'2026-07-15',type:'dredging',coords:[[24.448,118.075],[24.462,118.092],[24.453,118.110],[24.435,118.095]],description:'厦门港主航道水深保障疏浚作业，注意施工区域。',vessels:'天鲸号',vhf:'CH16/CH12',sourceUrl:'https://www.msa.gov.cn/3d725583ac134dfcb74aa8c47b14a164/index.jhtml'},
+  {id:'W004',title:'马祖列岛附近海域演习区域公告',number:'闽航警〔2026〕0089号',source:'福建海事局',date:'2026-06-08',startDate:'2026-06-20',endDate:'2026-06-25',type:'military',coords:[[26.30,119.92],[26.45,120.08],[26.38,120.25],[26.22,120.10]],description:'台湾海峡北部划定海上演习区域，演习期间禁止无关船舶进入。',vessels:'中国人民解放军舰艇',vhf:'CH16',sourceUrl:'https://www.msa.gov.cn/3d725583ac134dfcb74aa8c47b14a164/index.jhtml'},
+  {id:'W005',title:'南海石油钻井平台设置通告',number:'粤航通〔2026〕0523号',source:'広東海事局',date:'2026-06-05',startDate:'2026-06-08',endDate:'2026-12-31',type:'platform',coords:[[21.15,115.02],[21.20,115.15],[21.08,115.20],[21.03,115.08]],description:'南海北部大陆架进行石油钻井平台设置工程，周边2海里以内禁止接近。',vessels:'海洋石油981',vhf:'CH16/CH77',sourceUrl:'https://www.msa.gov.cn/32fa3793394148f7b5c3ec112d2bf8af/index.jhtml'},
+];
+
+// ── 起動 ──────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded',()=>{
+  updateClock(); setInterval(updateClock,1000);
+  loadData();
+  // 1時間ごとに自動リロード（Actions の更新サイクルに合わせる）
+  setInterval(loadData, 60*60*1000);
+});
+</script>
+</body>
+</html>
